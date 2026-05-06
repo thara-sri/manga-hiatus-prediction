@@ -22,10 +22,12 @@ Before training the model, the data was analyzed to uncover the publisher's beha
 
 ### 1. Target Distribution
 <img width="695" height="475" alt="distribution" src="https://github.com/user-attachments/assets/59fa150d-b73f-4575-83fe-6d06e07a0e87" />
+
 > **Insight:** The initial target class was highly imbalanced. By redefining a "Dropped" series as one with `> 365 days since the last release AND available un-translated Japanese volumes`, the dataset became much more balanced and optimal for ML training (~75% Safe vs ~25% Dropped).
 
 ### 2. Volume Gap Analysis
 <img width="930" height="552" alt="gap" src="https://github.com/user-attachments/assets/eaaa5599-ecb1-41af-8227-83791564c151" />
+
 > **Insight:** The boxplot clearly illustrates that discontinued manga typically have a significantly larger gap between the number of available Japanese volumes and published local volumes, serving as a strong early warning sign.
 
 ---
@@ -42,6 +44,7 @@ A **Random Forest Classifier** was utilized for its excellent performance on tab
 
 ### Feature Importance (The Publisher's Secret)
 <img width="950" height="552" alt="Feature Importance" src="https://github.com/user-attachments/assets/bdd3a8d4-9881-460f-ac7f-e7a2afca082e" />
+
 > **Business Insight (Domain Knowledge):** The model heavily weighted **Price / Average Price** as the #1 predictor. This perfectly mirrors the publisher's real-world strategy: if a series launches with an expensive "Premium Set," it signals high publisher confidence and a near-zero chance of being dropped.
 
 ---
