@@ -67,34 +67,70 @@ func (r *MangaRepository) GenerateMLFeatures() error {
 	}
 
 	query := `
+		WITH 
+		-- สเต็ปที่ 1: ดึงวันที่เล่มก่อนหน้ามาแปะข้างๆ เล่มปัจจุบัน
+		manga_gaps AS (
+			SELECT 
+				title_th, title_en, vol_th, jp_total_vols, jikan_status, has_premium, th_release_date,
+				-- [แก้ตรงนี้!] เปลี่ยน ORDER BY vol_th เป็น ORDER BY th_release_date ASC
+				LAG(th_release_date) OVER (PARTITION BY title_th ORDER BY th_release_date ASC) AS prev_release_date
+			FROM phoenix_mangas
+			WHERE media_type = 'Manga'
+		),
+		
+		-- สเต็ปที่ 2: Group By ยุบรวม และหา "ค่าเฉลี่ย" ของวันที่ห่างกัน
+		manga_stats AS (
+			SELECT 
+				title_th,
+				MAX(title_en) AS title_en,
+				MAX(th_release_date) AS latest_release_date,
+				MAX(vol_th) AS max_vol_th,
+				MAX(jp_total_vols) AS jp_total_vols,
+				SUM(has_premium) AS total_premium_issues,
+				MAX(jikan_status) AS jikan_status,
+				AVG(th_release_date - prev_release_date) AS avg_release_gap_days
+			FROM manga_gaps
+			GROUP BY title_th
+		)
+		
+		-- สเต็ปที่ 3: คำนวณ Ratio ขั้นสุดท้าย แล้วยัดลงตาราง
 		INSERT INTO manga_ml_features (
 			title_th, title_en, latest_release_date, max_vol_th, jp_total_vols, 
-			total_premium_issues, jikan_status, days_since_release, volume_gap, is_dropped, updated_at
+			total_premium_issues, jikan_status, days_since_release, volume_gap, 
+			avg_release_gap_days, delay_severity_ratio, is_dropped, updated_at
 		)
 		SELECT 
 			title_th,
-			MAX(title_en),
-			MAX(th_release_date),
-			MAX(vol_th),
-			MAX(jp_total_vols),
-			SUM(has_premium),
-			MAX(jikan_status),
+			title_en,
+			latest_release_date,
+			max_vol_th,
+			jp_total_vols,
+			total_premium_issues,
+			jikan_status,
 			
-			CURRENT_DATE - DATE(MAX(th_release_date)),
+			CURRENT_DATE - DATE(latest_release_date) AS days_since_release,
+			GREATEST(0, jp_total_vols - max_vol_th) AS volume_gap,
 			
-			GREATEST(0, MAX(jp_total_vols) - MAX(vol_th)),
+			-- ใช้ GREATEST(0, ...) ดักไว้อีกชั้นเพื่อความชัวร์ 100% ว่าจะไม่มีค่าติดลบหลุดไปเข้าโมเดล
+			GREATEST(0, COALESCE(avg_release_gap_days, 0)) AS avg_release_gap_days,
 			
 			CASE 
-				WHEN MAX(jikan_status) IN ('HIATUS', 'CANCELLED') THEN 0
-				WHEN (CURRENT_DATE - DATE(MAX(th_release_date))) > 730 
-					 AND GREATEST(0, MAX(jp_total_vols) - MAX(vol_th)) >= 3 THEN 1
-				ELSE 0
-			END,
+				WHEN GREATEST(0, COALESCE(avg_release_gap_days, 0)) > 0 THEN 
+					(CURRENT_DATE - DATE(latest_release_date)) / GREATEST(0, COALESCE(avg_release_gap_days, 0))
+				ELSE 0 
+			END AS delay_severity_ratio,
 			
-			CURRENT_TIMESTAMP -- updated_at
-		FROM phoenix_mangas
-		WHERE media_type = 'Manga'
-		GROUP BY title_th;
+			CASE 
+				WHEN jikan_status IN ('HIATUS', 'CANCELLED') THEN 0
+				WHEN (CURRENT_DATE - DATE(latest_release_date)) > 730 AND GREATEST(0, jp_total_vols - max_vol_th) >= 3 THEN 1
+				WHEN (GREATEST(0, COALESCE(avg_release_gap_days, 0)) > 0 
+				      AND ((CURRENT_DATE - DATE(latest_release_date)) / GREATEST(0, COALESCE(avg_release_gap_days, 0))) > 4.0) 
+				     AND GREATEST(0, jp_total_vols - max_vol_th) >= 2 THEN 1
+				ELSE 0
+			END AS is_dropped,
+			
+			CURRENT_TIMESTAMP
+		FROM manga_stats;
 	`
 	
 	result := r.DB.Exec(query)

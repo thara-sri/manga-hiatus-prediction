@@ -54,6 +54,8 @@ type MangaMLFeature struct {
 	JikanStatus         string     `gorm:"type:varchar(50)" json:"jikan_status"`
 	DaysSinceRelease    int        `gorm:"type:int" json:"days_since_release"`
 	VolumeGap           int        `gorm:"type:int" json:"volume_gap"`
+	AvgReleaseGapDays   float64    `gorm:"type:decimal(10,2)" json:"avg_release_gap_days"`
+	DelaySeverityRatio  float64    `gorm:"type:decimal(10,2)" json:"delay_severity_ratio"`
 	IsDropped           int        `gorm:"type:int" json:"is_dropped"`
 	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
